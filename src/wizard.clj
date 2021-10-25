@@ -64,19 +64,35 @@
 ;   4. if we were compiling there would be a bunch more here but since we're
 ;        interpreting and abusing the shit out of having a host language with
 ;        a nice library of functions, we can avoid this for now!
-(defn eval-wizard [program]
-  (reduce eval-form initial-env program))
+(defn eval-wizard [env program]
+  ; for a simple repl, this should actually be something like
+  ; (-> macroexpand
+  ;     typecheck
+  ;     eval)
+  (reduce eval-form env program))
 
-(defn typecheck-form [form env]
-  )
+(defn typecheck-form [form env])
 
-(defn typecheck [program]
-  "Type checks a wizard program"
-  (reduce typecheck-form initial-env program))
+(defn typecheck [env program]
+  (reduce typecheck-form env program))
 
 (def initial-env
   {:types {}
    :functions builtins})
 
-(eval-form '(defs foo (a -> a -> a)) initial-env)
+; (eval-form '(defs foo (a -> a -> a)) initial-env)
 ; (eval-wizard wizard-example)
+
+(def wizard-types-example
+  ; 'data' introduces a new type into the program
+  '((data MyInt Int) ; a type alias
+    (data Pair (Int, Int)) ; a product type
+    (data Choice (Int | String)) ; a sum type
+    (data Bool (True | False)) ; a bool (sum type with two nullary constructors)
+    (data List [a] (Nil | Cons a (List a)))
+    (data Tree [a] (Leaf a | Node (Tree a) (Tree a))) ; a simple homogeneous tree
+
+    ; 'type' asserts that a term with a certain name has a certain type
+    (type a-number Int) ; I have a constant named 'a-number' which is an Int
+    (type inc (Int -> Int)) ; the type signature of a function that increments an int
+    ))
