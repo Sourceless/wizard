@@ -71,7 +71,35 @@
   ;     eval)
   (reduce eval-form env program))
 
-(defn typecheck-form [form env])
+(defrecord Type [name bindings constructors])
+(defrecord Binding [name type])
+(defrecord Constructor [name bindings contents])
+
+(defn parse-data-binding [binding]
+  (Binding. binding 'Type))
+
+(defn parse-data-bindings
+  ([_constructors] nil)
+  ([bindings constructors]
+   (if (= 'where (first constructors))
+     {:bindings "need to be parsed from constructors or some binding sig..."}
+     (if (seq? bindings)
+       (map parse-data-binding bindings)
+       (parse-data-binding bindings)))))
+
+
+(defn parse-data [form]
+  (let [data (rest form)]
+    (Type. (first data) (apply parse-data-bindings (rest data)) data)))
+
+(defn typecheck-form [env form]
+  (if (= 'data (first form))
+    (let [t (parse-data form)]
+      (if (contains? (:types env) (:name t))
+        (throw (Exception. (str "Type " (:name t) " already exists.")))
+        nil)
+      (assoc-in env [:types (:name t)] t))
+    env))
 
 (defn typecheck [env program]
   (reduce typecheck-form env program))
@@ -89,10 +117,24 @@
     (data Pair (Int, Int)) ; a product type
     (data Choice (Int | String)) ; a sum type
     (data Bool (True | False)) ; a bool (sum type with two nullary constructors)
-    (data List [a] (Nil | Cons a (List a)))
-    (data Tree [a] (Leaf a | Node (Tree a) (Tree a))) ; a simple homogeneous tree
+    (data IntList [Int]) ; a list of Ints
+    (data List a (Nil | Cons a (List a))) ; a simple homogeneous list
+    (data OtherList (Type -> Type) ; Same list, different syntax
+          (where [Nil (List a)
+                  "::" (a -> List a -> List a)]))
+    (data Tree a (Leaf a | Node (Tree a) (Tree a))) ; a simple homogeneous tree
+    (data Nat (Zero | S Nat)) ; a natural number, peano-style
+    (data OtherNat Type ; a natural number using the longer syntax
+          (where [Z Nat
+                  S (Nat -> Nat)]))
+    (data Vect ({n Nat} -> a -> Type) ; a more complex dependent type signature
+          (where [Nil (Vect 0 a)
+                  "::" {x a} -> {xs (Vect n a)} -> (Vect (S n) a)]))
 
     ; 'type' asserts that a term with a certain name has a certain type
     (type a-number Int) ; I have a constant named 'a-number' which is an Int
     (type inc (Int -> Int)) ; the type signature of a function that increments an int
+    (type curried (Int -> Int -> Int)) ; the type signature of a function with more than one arg
     ))
+
+(typecheck {:types {}} wizard-types-example)
