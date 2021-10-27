@@ -78,11 +78,41 @@
 (defn parse-data-binding [binding]
   (Binding. binding 'Type))
 
+(defn parse-explicit-binding [bindings]
+  (let [name (first (first (bindings)))
+        type' (first (second (bindings)))]
+    (Binding. name type' )))
+
+(first {1 2})
+
+(defn parse-simple-binding [bindings]
+  (if (map? bindings)
+    (parse-explicit-binding bindings)
+    (Binding. bindings 'Type)))
+
+(defn parse-function-components
+  ([signature]
+   (parse-function-components '() signature))
+
+  ([components signature]
+   (if (empty? signature)
+     (reverse (map parse-simple-binding components))
+     (parse-function-components (cons (take-while #(not= '-> %) signature) components)
+                                (drop 1 (drop-while #(not= '-> %) signature))))))
+
+(defn parse-function-binding [bindings]
+  (map parse-simple-binding (parse-function-components bindings)))
+
+(defn parse-long-form-bindings [bindings]
+  (if (contains? (vector bindings) '->)
+    (parse-function-binding bindings)
+    (parse-simple-binding bindings)))
+
 (defn parse-data-bindings
   ([_constructors] nil)
   ([bindings constructors]
    (if (= 'where (first constructors))
-     {:bindings "need to be parsed from constructors or some binding sig..."}
+     (parse-long-form-bindings bindings)
      (if (seq? bindings)
        (map parse-data-binding bindings)
        (parse-data-binding bindings)))))
@@ -125,7 +155,7 @@
     (data Tree a (Leaf a | Node (Tree a) (Tree a))) ; a simple homogeneous tree
     (data Nat (Zero | S Nat)) ; a natural number, peano-style
     (data OtherNat Type ; a natural number using the longer syntax
-          (where [Z Nat
+          (where [Zero Nat
                   S (Nat -> Nat)]))
     (data Vect ({n Nat} -> a -> Type) ; a more complex dependent type signature
           (where [Nil (Vect 0 a)
