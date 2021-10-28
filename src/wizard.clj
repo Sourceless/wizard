@@ -35,6 +35,7 @@
 ;   - Unit (the type with only one value)
 ;   - Void (the type with no values)
 
+
 (defn eval-defs [env body]
   (let [name (first body)
         sig (rest body)]
@@ -71,24 +72,22 @@
   ;     eval)
   (reduce eval-form env program))
 
-(defrecord Type [name bindings constructors])
-(defrecord Binding [name type])
-(defrecord Constructor [name bindings contents])
+(defrecord Type [name terms constructors])
+(defrecord Term [name type])
+(defrecord Constructor [name terms])
 
 (defn parse-data-binding [binding]
-  (Binding. binding 'Type))
+  (Term. binding 'Type))
 
-(defn parse-explicit-binding [bindings]
-  (let [name (first (first (bindings)))
-        type' (first (second (bindings)))]
-    (Binding. name type' )))
+(defn parse-explicit-binding [terms]
+  (let [name (first (first (terms)))
+        type' (first (second (terms)))]
+    (Term. name type')))
 
-(first {1 2})
-
-(defn parse-simple-binding [bindings]
-  (if (map? bindings)
-    (parse-explicit-binding bindings)
-    (Binding. bindings 'Type)))
+(defn parse-simple-binding [terms]
+  (if (map? terms)
+    (parse-explicit-binding terms)
+    (Term. terms 'Type)))
 
 (defn parse-function-components
   ([signature]
@@ -100,27 +99,33 @@
      (parse-function-components (cons (take-while #(not= '-> %) signature) components)
                                 (drop 1 (drop-while #(not= '-> %) signature))))))
 
-(defn parse-function-binding [bindings]
-  (map parse-simple-binding (parse-function-components bindings)))
+(defn parse-function-binding [terms]
+  (map parse-simple-binding (parse-function-components terms)))
 
-(defn parse-long-form-bindings [bindings]
-  (if (contains? (vector bindings) '->)
-    (parse-function-binding bindings)
-    (parse-simple-binding bindings)))
+(defn parse-long-form-terms [terms]
+  (if (contains? (vector terms) '->)
+    (parse-function-binding terms)
+    (parse-simple-binding terms)))
 
-(defn parse-data-bindings
+(defn parse-data-terms
   ([_constructors] nil)
-  ([bindings constructors]
+  ([terms constructors]
    (if (= 'where (first constructors))
-     (parse-long-form-bindings bindings)
-     (if (seq? bindings)
-       (map parse-data-binding bindings)
-       (parse-data-binding bindings)))))
+     (parse-long-form-terms terms)
+     (if (seq? terms)
+       (map parse-data-binding terms)
+       (parse-data-binding terms)))))
 
+(defn parse-constructor-terms [terms]
+  (Term. 'Anon (first terms)))
+
+(defn parse-constructors [constructors]
+  (Constructor. (first constructors)
+                (parse-constructor-terms constructors)))
 
 (defn parse-data [form]
   (let [data (rest form)]
-    (Type. (first data) (apply parse-data-bindings (rest data)) data)))
+    (Type. (first data) (apply parse-data-terms (rest data)) (parse-constructors (rest data)))))
 
 (defn typecheck-form [env form]
   (if (= 'data (first form))
@@ -141,30 +146,44 @@
 ; (eval-form '(defs foo (a -> a -> a)) initial-env)
 ; (eval-wizard wizard-example)
 
+
+; So I revised the syntax from the ML-style to something lispier
+;
+; Quick guide:
+;   - Int, a, etc.: 'simple' types or terms
+;   - (= x a): named term with explicit type
+;   - (= 1 x a): named term with explicit multiplicity
+;   - (+ a a): sum type
+;   - (* a a): product type
 (def wizard-types-example
   ; 'data' introduces a new type into the program
   '((data MyInt Int) ; a type alias
-    (data Pair (Int, Int)) ; a product type
-    (data Choice (Int | String)) ; a sum type
-    (data Bool (True | False)) ; a bool (sum type with two nullary constructors)
+    (data Pair (* Int Int)) ; a product type
+    (data Choice (+ Int String)) ; a sum type
+    (data Bool (+ True False)) ; a bool (sum type with two nullary constructors)
     (data IntList [Int]) ; a list of Ints
-    (data List a (Nil | Cons a (List a))) ; a simple homogeneous list
-    (data OtherList (Type -> Type) ; Same list, different syntax
+    (data (List a) (+ Nil (Cons a (List a)))) ; a simple homogeneous list
+    (data OtherList (-> Type Type) ; Same list, different syntax
           (where [Nil (List a)
-                  "::" (a -> List a -> List a)]))
-    (data Tree a (Leaf a | Node (Tree a) (Tree a))) ; a simple homogeneous tree
-    (data Nat (Zero | S Nat)) ; a natural number, peano-style
+                  "::" (-> a (List a) (List a))]))
+    (data (Tree a) (+ (Leaf a) (Node (Tree a) (Tree a)))) ; a simple homogeneous tree
+    (data Nat (+ Zero (S Nat))) ; a natural number, peano-style
     (data OtherNat Type ; a natural number using the longer syntax
           (where [Zero Nat
-                  S (Nat -> Nat)]))
-    (data Vect ({n Nat} -> a -> Type) ; a more complex dependent type signature
+                  S (-> Nat Nat)]))
+    (data Vect (-> {n Nat} a Type) ; a more complex dependent type signature
           (where [Nil (Vect 0 a)
-                  "::" {x a} -> {xs (Vect n a)} -> (Vect (S n) a)]))
+                  "::" (-> (= x a) {xs (Vect n a)} (Vect (S n) a))]))
 
     ; 'type' asserts that a term with a certain name has a certain type
     (type a-number Int) ; I have a constant named 'a-number' which is an Int
-    (type inc (Int -> Int)) ; the type signature of a function that increments an int
-    (type curried (Int -> Int -> Int)) ; the type signature of a function with more than one arg
+    (type inc (-> Int Int)) ; the type signature of a function that increments an int
+    (type curried (-> Int Int Int)) ; the type signature of a function with more than one arg
     ))
 
-(typecheck {:types {}} wizard-types-example)
+; (typecheck {:types {}} wizard-types-example)
+
+(typecheck {:types {}} '((data (Maybe a) (+ (Just a) Nothing))))
+
+;; (typecheck {:types {}} '((data MyInt Int)
+;;                          (data Pair (Int * Int))))
