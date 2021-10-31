@@ -72,60 +72,53 @@
   ;     eval)
   (reduce eval-form env program))
 
-(defrecord Type [name terms constructors])
-(defrecord Term [name type])
+(defrecord Type [name terms type constructors])
+(defrecord Term [name multiplicity type])
 (defrecord Constructor [name terms])
 
-(defn parse-data-binding [binding]
-  (Term. binding 'Type))
+(defn parse-data-type [spec]
+  (if (= 'where (first (second spec)))
+    "Complex type"
+    :type/Type))
 
-(defn parse-explicit-binding [terms]
-  (let [name (first (first (terms)))
-        type' (first (second (terms)))]
-    (Term. name type')))
+(defn parse-data-constructors [spec]
+  "TBI")
 
-(defn parse-simple-binding [terms]
-  (if (map? terms)
-    (parse-explicit-binding terms)
-    (Term. terms 'Type)))
+(defn parse-data-name [name-and-terms]
+  (if (seq? name-and-terms)
+    (first name-and-terms)
+    name-and-terms))
 
-(defn parse-function-components
-  ([signature]
-   (parse-function-components '() signature))
+(defn parse-mult [mult]
+  (cond
+    (= mult 0) :mult/Erase
+    (= mult 1) :mult/Linear
+    (= mult 'm) :mult/Unrestricted
+    :else nil))
 
-  ([components signature]
-   (if (empty? signature)
-     (reverse (map parse-simple-binding components))
-     (parse-function-components (cons (take-while #(not= '-> %) signature) components)
-                                (drop 1 (drop-while #(not= '-> %) signature))))))
+(defn parse-data-term [term]
+  (if (seq? term)
+    (let [op (first term)]
+      (cond
+        (= op '=) (Term. (second term) :mult/Unrestricted (symbol "type" (nth term 3)))
+        (= op '==) (Term. (nth term 3) (parse-mult (second term)) (symbol "type" (nth term 4)))
+        :else 'fail))
+    (Term. term :mult/Erase :type/Unbound)))
 
-(defn parse-function-binding [terms]
-  (map parse-simple-binding (parse-function-components terms)))
-
-(defn parse-long-form-terms [terms]
-  (if (contains? (vector terms) '->)
-    (parse-function-binding terms)
-    (parse-simple-binding terms)))
-
-(defn parse-data-terms
-  ([_constructors] nil)
-  ([terms constructors]
-   (if (= 'where (first constructors))
-     (parse-long-form-terms terms)
-     (if (seq? terms)
-       (map parse-data-binding terms)
-       (parse-data-binding terms)))))
-
-(defn parse-constructor-terms [terms]
-  (Term. 'Anon (first terms)))
-
-(defn parse-constructors [constructors]
-  (Constructor. (first constructors)
-                (parse-constructor-terms constructors)))
+(defn parse-data-terms [name-and-terms]
+  (if (seq? name-and-terms)
+    (map parse-data-term (rest name-and-terms))
+    nil))
 
 (defn parse-data [form]
-  (let [data (rest form)]
-    (Type. (first data) (apply parse-data-terms (rest data)) (parse-constructors (rest data)))))
+  (let [data (rest form)
+        name-and-terms (first data)
+        name (parse-data-name name-and-terms)
+        terms (parse-data-terms name-and-terms)
+        spec (rest data)
+        type' (parse-data-type spec)
+        constructors (parse-data-constructors spec)]
+    (Type. (symbol "type" (str name)) terms type' constructors)))
 
 (defn typecheck-form [env form]
   (if (= 'data (first form))
@@ -152,7 +145,7 @@
 ; Quick guide:
 ;   - Int, a, etc.: 'simple' types or terms
 ;   - (= x a): named term with explicit type
-;   - (= 1 x a): named term with explicit multiplicity
+;   - (== 1 x a): named term with explicit multiplicity
 ;   - (+ a a): sum type
 ;   - (* a a): product type
 (def wizard-types-example
@@ -163,7 +156,7 @@
     (data Bool (+ True False)) ; a bool (sum type with two nullary constructors)
     (data IntList [Int]) ; a list of Ints
     (data (List a) (+ Nil (Cons a (List a)))) ; a simple homogeneous list
-    (data OtherList (-> Type Type) ; Same list, different syntax
+    (data OtherList (-> (= a Type) Type) ; Same list, different syntax
           (where [Nil (List a)
                   "::" (-> a (List a) (List a))]))
     (data (Tree a) (+ (Leaf a) (Node (Tree a) (Tree a)))) ; a simple homogeneous tree
@@ -171,9 +164,9 @@
     (data OtherNat Type ; a natural number using the longer syntax
           (where [Zero Nat
                   S (-> Nat Nat)]))
-    (data Vect (-> {n Nat} a Type) ; a more complex dependent type signature
+    (data Vect (-> (= n Nat) a Type) ; a more complex dependent type signature
           (where [Nil (Vect 0 a)
-                  "::" (-> (= x a) {xs (Vect n a)} (Vect (S n) a))]))
+                  "::" (-> (= x a) (= xs (Vect n a)) (Vect (S n) a))]))
 
     ; 'type' asserts that a term with a certain name has a certain type
     (type a-number Int) ; I have a constant named 'a-number' which is an Int
