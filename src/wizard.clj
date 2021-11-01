@@ -36,53 +36,61 @@
 ;   - Void (the type with no values)
 
 
-(defn eval-defs [env body]
-  (let [name (first body)
-        sig (rest body)]
-    (assoc-in env [:types name] sig)))
-
-(defn eval-defn [env body])
-
-(def builtins
-  {'defs eval-defs
-   'defn eval-defn
-   '+ +})
-
-(defn eval-form [form env]
-  (let [f (get (:functions env) (first form))]
-    (f env (rest form))))
-
-; When we eval we should actually do a few things first
-;   1. type check
-;        iterate over all the type and function definitions in the program
-;        and check that they are logically sound. if that's good, then we
-;        can eval knowing the program is typesafe
-;   2. actually that's it, the second step is to run the eval
-;   3. oh actually tbf we can pretty much erase types to some degree after
-;        we're sure that the program typechecks, i.e. we don't need to keep
-;        the typedefs and signatures around anymore, we just need to have
-;        the bits of the program that do stuff
-;   4. if we were compiling there would be a bunch more here but since we're
-;        interpreting and abusing the shit out of having a host language with
-;        a nice library of functions, we can avoid this for now!
-(defn eval-wizard [env program]
-  ; for a simple repl, this should actually be something like
-  ; (-> macroexpand
-  ;     typecheck
-  ;     eval)
-  (reduce eval-form env program))
-
 (defrecord Type [name terms type constructors])
 (defrecord Term [name multiplicity type])
-(defrecord Constructor [name terms])
+(defrecord Constructor [name terms type])
 
-(defn parse-data-type [spec]
+(defn reference-type [name env]
+  (let [type-name (keyword "type" (str name))]
+    (if (contains? (:types env) type-name)
+      type-name
+      (throw (Exception. (str "No type known named " type-name))))))
+
+(defn parse-data-type [spec env]
   (if (= 'where (first (second spec)))
     "Complex type"
-    :type/Type))
+    (reference-type 'Type env)))
 
-(defn parse-data-constructors [spec]
-  "TBI")
+(defn term-if-exists [term typedef]
+  (let [term' (get-in typedef [:terms (keyword term)])]
+    (if (some? term')
+      (keyword term)
+      (throw (Exception. (str "Unexpected term " term " in constructor of type " (:name typedef) ". Valid terms: " (:terms typedef)))))))
+
+(defn parse-constructor-term [term typedef env]
+  (cond
+    (every? #(Character/isLowerCase %) (str term)) (term-if-exists term typedef)
+    :else (throw (Exception. (str "Unknown constructor term encountered: " term)))))
+
+(defn list-terms [typedef]
+  (let [terms (vals (:terms typedef))]
+    (prn terms)
+    (map #(symbol (:name %)) terms)))
+
+(defn typedef-to-basic-type [typedef]
+  (prn typedef)
+  (prn (list-terms typedef))
+  (conj (list-terms typedef) (symbol (:name typedef))))
+
+(defn constructor-type [constructor-terms typedef]
+  "To be implemented")
+
+(defn parse-sum-constructor [spec typedef env]
+  (if (seq? spec)
+    (let [name (first spec)
+          terms (rest spec)
+          constructor-terms (map #(parse-constructor-term % typedef env) terms)]
+      (Constructor. name constructor-terms (constructor-type constructor-terms typedef)))
+    (Constructor. spec nil (typedef-to-basic-type typedef))))
+
+(defn parse-sum-constructors [spec typedef env]
+  (prn spec)
+  (map #(parse-sum-constructor %1 typedef env) spec))
+
+(defn parse-data-constructors [spec typedef env]
+  (cond
+    (= (first spec) '+) (parse-sum-constructors (rest spec) typedef env)
+    :else (throw (Exception. "Not implemented"))))
 
 (defn parse-data-name [name-and-terms]
   (if (seq? name-and-terms)
@@ -96,33 +104,35 @@
     (= mult 'm) :mult/Unrestricted
     :else nil))
 
-(defn parse-data-term [term]
+(defn parse-data-term [term env]
   (if (seq? term)
     (let [op (first term)]
       (cond
-        (= op '=) (Term. (second term) :mult/Unrestricted (symbol "type" (nth term 3)))
-        (= op '==) (Term. (nth term 3) (parse-mult (second term)) (symbol "type" (nth term 4)))
-        :else 'fail))
-    (Term. term :mult/Erase :type/Unbound)))
+        (= op '=) (Term. (str (second term)) :mult/Unrestricted (reference-type (nth term 3) env))
+        (= op '==) (Term. (str (nth term 3)) (parse-mult (second term)) (reference-type (nth term 4) env))
+        :else (throw (Exception. "Invalid term specifier"))))
+    (Term. (str term) :mult/Erase :type/Unbound)))
 
-(defn parse-data-terms [name-and-terms]
+(defn parse-data-terms [name-and-terms env]
   (if (seq? name-and-terms)
-    (map parse-data-term (rest name-and-terms))
+    (reduce #(assoc %1 (keyword (:name %2)) %2)
+            {}
+            (map parse-data-term (rest name-and-terms) env))
     nil))
 
-(defn parse-data [form]
+(defn parse-data [form env]
   (let [data (rest form)
         name-and-terms (first data)
         name (parse-data-name name-and-terms)
-        terms (parse-data-terms name-and-terms)
+        terms (parse-data-terms name-and-terms env)
         spec (rest data)
-        type' (parse-data-type spec)
-        constructors (parse-data-constructors spec)]
-    (Type. (symbol "type" (str name)) terms type' constructors)))
+        type' (parse-data-type spec env)
+        constructors (parse-data-constructors (first spec) (Type. (str name) terms type' nil) env)]
+    (Type. (str name) terms type' constructors)))
 
 (defn typecheck-form [env form]
   (if (= 'data (first form))
-    (let [t (parse-data form)]
+    (let [t (parse-data form env)]
       (if (contains? (:types env) (:name t))
         (throw (Exception. (str "Type " (:name t) " already exists.")))
         nil)
@@ -131,14 +141,6 @@
 
 (defn typecheck [env program]
   (reduce typecheck-form env program))
-
-(def initial-env
-  {:types {}
-   :functions builtins})
-
-; (eval-form '(defs foo (a -> a -> a)) initial-env)
-; (eval-wizard wizard-example)
-
 
 ; So I revised the syntax from the ML-style to something lispier
 ;
@@ -174,9 +176,12 @@
     (type curried (-> Int Int Int)) ; the type signature of a function with more than one arg
     ))
 
+(def initial-env
+  {:types {:type/Type (Type. "Type" nil :type/Type nil)}})
+
 ; (typecheck {:types {}} wizard-types-example)
 
-(typecheck {:types {}} '((data (Maybe a) (+ (Just a) Nothing))))
+(typecheck initial-env '((data (Maybe a) (+ (Just a) Nothing))))
 
 ;; (typecheck {:types {}} '((data MyInt Int)
 ;;                          (data Pair (Int * Int))))
