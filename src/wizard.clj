@@ -1,4 +1,5 @@
-(ns wizard)
+(ns wizard
+  (:require [clojure.spec.alpha :as s]))
 
 ; so to get types to work i have to understand wtf a type is
 ; so there's a few possible angles here
@@ -272,6 +273,34 @@
 ;(parse-primitives '((def x 1)))
 ;(typecheck initial-env my-little-program)
 
-(->> my-little-program
-     parse-primitives
-     (typecheck initial-env))
+;; (->> my-little-program
+;;      parse-primitives
+;;      (typecheck initial-env))
+
+(defrecord DType [name spec])
+(defrecord DTypeVar [name])
+(defrecord DValue [t data])
+
+(defn is-dtype? [t]
+  (instance? DType t))
+
+(s/def :wizard/dtype is-dtype?)
+
+(defn simple-type [t]
+  {:pre [(s/valid? :wizard/dtype t)]}
+  (fn [] t))
+
+(defn polymorphic-type [t]
+  {:pre [(s/valid? :wizard/dtype t)]}
+  (fn [t2] (list t t2)))
+
+(defn dependent-function-type [t] (fn [n a] (->DType (list :type/Vector n a))))
+(def dependent-pair-type (fn [v f] (->DType (list :type/Pair (:type v) (f v)))))
+
+(def Int (->DType 'Int []))
+(def List (->DType 'List [(->DTypeVar 'a)]))
+(def Point (->DType 'Point [Int Int]))
+
+((simple-type Int))
+((simple-type Point))
+((polymorphic-type List) Int)
