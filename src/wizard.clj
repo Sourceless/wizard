@@ -277,9 +277,7 @@
 ;;      parse-primitives
 ;;      (typecheck initial-env))
 
-(defrecord DType [name spec])
-(defrecord DTypeVar [name])
-(defrecord DValue [t data])
+(defrecord DType [name args])
 
 (defn is-dtype? [t]
   (instance? DType t))
@@ -290,17 +288,49 @@
   {:pre [(s/valid? :wizard/dtype t)]}
   (fn [] t))
 
-(defn polymorphic-type [t]
-  {:pre [(s/valid? :wizard/dtype t)]}
-  (fn [t2] (list t t2)))
+(defn make-type [t & args]
+  (->DType t (vec args)))
 
-(defn dependent-function-type [t] (fn [n a] (->DType (list :type/Vector n a))))
-(def dependent-pair-type (fn [v f] (->DType (list :type/Pair (:type v) (f v)))))
+(defn make-list-of-a [a]
+  (make-type 'List a))
 
-(def Int (->DType 'Int []))
-(def List (->DType 'List [(->DTypeVar 'a)]))
-(def Point (->DType 'Point [Int Int]))
+(defn make-pair [a b]
+  (make-type 'Pair a b))
+
+(def Int (make-type 'Int))
+(def List (->DType 'List ['a])) ; a -> List a
+(def Point (->DType 'Point ['Int 'Int])) ; Point Int Int
 
 ((simple-type Int))
 ((simple-type Point))
-((polymorphic-type List) Int)
+(make-list-of-a Int)
+
+(def MyList (make-type 'MyList 'a))
+(def MyTriple (make-type 'MyTriple 'a 'b 'c))
+(def MixedTriple (make-type 'MixedTriple 'a 'Int 'b))
+(def Pair (make-type 'Pair 'a 'a))
+
+(defn looks-like-var [var]
+  (let [var-name (str var)
+        match (re-matches #"[a-z]+" var-name)]
+    (some? match)))
+
+(defn get-free-vars [t]
+  (let [uniq-args (distinct (:args t))]
+    (filter looks-like-var uniq-args)))
+
+(get-free-vars MixedTriple)
+;; => (a b)
+;;
+(defn replace-k [var-name match-name value]
+  (if (= var-name match-name)
+    value
+    var-name))
+
+(defn eval-var [t var-name value]
+  (let [args (:args t)
+        args' (map #(replace-k % var-name value) args)]
+    (apply make-type (list (:name t)) args')))
+
+(eval-var (eval-var MixedTriple 'a 'Int) 'b 'Int)
+(eval-var Pair 'a 'Int)
