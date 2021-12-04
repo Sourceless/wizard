@@ -12,13 +12,15 @@ quantitative type theories.
 * Compiled to LLVM IR, and possibly to WASM too
 * No/minimal runtime
 * Decent standard library (a decent prelude, some useful http/etc stuff)
+* Macros as a vehicle for implementing syntactic sugar through an explicit
+  and accessible mechanism.
 
 # Aims
 Create a small language with a strong type theory that can be built upon and
 used as a target for higher level languages.
 
-More than anything, I want to bring dependent types to more people, and improve
-our programs just a little bit.
+More than anything, I want to bring fancier types to more people, and improve
+our programs just a little bit -- but without it being scary!
 
 # Inspiration
 Wizard owes its design and principles to many other projects; here are just a
