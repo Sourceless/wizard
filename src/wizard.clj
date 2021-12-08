@@ -1,11 +1,13 @@
-(ns wizard)
+(ns wizard
+  (:require [clojure.string :as str]))
 
 (def prelude
   '(
-    (data IO a)
-    (type print (-> String (IO ())))
+    (data (State s a) [(MkState s a)])
+    (def (IO a) (-> W (a World)))
+    (type print (-> String (IO World ())))
     (def print [s]
-      (print! s))
+      (MkIO World ()))
     ))
 
 (def hello-world
@@ -16,10 +18,37 @@
               (print "Hello world!"))
             )))
 
+(defn is-lowercase? [str]
+  (= str (str/lower-case str)))
+
+(defn type-variables [typespec]
+  (let [args (rest typespec)
+        vars (filter is-lowercase? (map str args))
+        vars (dedupe vars)]
+    (map symbol vars)))
+
+(defn add-type [t env]
+  (assoc env :types t))
+
+(defn add-type-constructor [t tc env]
+  (assoc-in env [:type-constructors t] tc))
+
+(defn curry [func-type]
+  (let [args (drop-last 1 (rest func-type))
+        return-type (last func-type)]
+    (reduce #(list '-> %2 %1) return-type (reverse args))))
+
+(defn type-constructor-from-signature [sig]
+  (let [vars (type-variables sig)
+        func-args (conj vars '->)
+        uncurried (concat (list '->) vars (list sig))]
+    (curry uncurried)))
+
 (defn parse-data [typespec env]
-  (let [type-name (first typespec)
-        type-def (rest typespec)]
-    (assoc-in env [:types type-name] type-def)))
+  (let [type-and-params (first typespec)]
+    (->> env
+      (add-type type-and-params)
+      (add-type-constructor type-and-params (type-constructor-from-signature type-and-params)))))
 
 (defn parse-assert [assertion env]
   (let [definition-name (first assertion)
@@ -48,10 +77,10 @@
 
 (defn read [program env]
   (-> env
-      (#(reduce parse % program))
-      make-constructors))
+      (#(reduce parse % program))))
 
-(read prelude {:types {}
+(read prelude {:types (hash-set)
                :assertions {}
                :definitions {}
-               :constructors {}})
+               :type-constructors {}
+               :value-constructors {}})
