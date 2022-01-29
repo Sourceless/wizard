@@ -6,14 +6,19 @@
 
 (def my-program
   '(
-    (+ (+ 1 1) 1)
-    ))
+    (fn [x] x)
+   ))
+
+(defn wizard-fn [argspec body]
+  ; TODO
+)
 
 (def initial-env
   {:functions {'+ +
                '- -
                '* *
-               '/ /}})
+               '/ /
+               'fn wizard-fn}})
 
 (defn is-expression? [form]
   (list? form))
