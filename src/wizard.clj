@@ -1,11 +1,24 @@
 (ns wizard
-  (:require [clojure.walk :refer [postwalk]]))
+  (:require [clojure.walk :refer [prewalk postwalk]]))
 
 (def my-program
   '(((fn x x) (fn _ 0)) 1))
 
 (def my-boring-program
-  1)
+  '(1))
+
+(def program-with-binding
+  '(
+    (def x 1)
+    x
+    ))
+
+(def program-with-two-bindings
+  '(
+    (def x 1)
+    (def y 2)
+    x
+    ))
 
 (defn fmap [f data]
   (if (seq? data)
@@ -22,6 +35,17 @@
   ; Replace arg in body with a unique value
   (let [new-name (gensym (str arg-name "__"))]
     (list 'fn new-name (fmap (replace-if-matches arg-name new-name) body))))
+
+(defn wizard-macro-binding [binding body]
+  (println "Expanding" binding)
+  (let [name (second binding)
+        value (last binding)]
+    (list (list 'fn name body) value)))
+
+(defn wizard-macro-expand-form [form]
+  (if (and (seq? form) (seq? (first form)) (= 'def (first (first form))))
+    (wizard-macro-binding (first form) (second form))
+    form))
 
 (defn wizard-read-form [form]
   (if (seq? form)
@@ -45,11 +69,20 @@
 (defn wizard-read [program]
   (postwalk wizard-read-form program))
 
+(defn value? [program]
+  (number? program))
+
 (defn reducible? [program]
   (seq? program))
 
 (defn terminal? [program]
   (not (reducible? program)))
+
+(defn wizard-macro-expand [program]
+  (println program)
+  (if (reducible? program)
+    (map wizard-macro-expand (wizard-macro-expand-form program))
+    program))
 
 (defn function? [program]
   (and (reducible? program) (= 'fn (first program))))
@@ -57,7 +90,6 @@
 (defn indent [n]
   (apply str (repeat n "  ")))
 
-; TODO debugme
 (defn normal-order-eval [program nesting]
   (println (indent nesting) "EVAL:" program)
   (cond
@@ -67,6 +99,7 @@
                              [left (first program)
                               right (second program)]
                            (cond
+                             (value? left) left
                              (terminal? left) program ; nothing we can do, since functions don't have names yet
                              (function? left) (normal-order-eval (wizard-fn-beta-reduce left right) (inc nesting)) ; apply function
                              (reducible? left) (normal-order-eval (list (normal-order-eval left (inc nesting)) right) nesting) ; the left side can be reduced
@@ -82,10 +115,17 @@
 
 (wizard-eval (wizard-read my-program))
 
-(defn wizard-read-and-eval [program]
+(defn wizard-interpret [program]
   (-> program
+      wizard-macro-expand
       wizard-read
       wizard-eval))
 
-(assert (= (wizard-read-and-eval my-program) 0))
-(assert (= (wizard-read-and-eval my-boring-program) 1))
+(assert (= (wizard-interpret my-program) 0))
+(assert (= (wizard-interpret my-boring-program) 1))
+(assert (= (wizard-macro-expand program-with-binding) '((fn x x) 1)))
+(assert (= (wizard-interpret program-with-binding) 1))
+
+(wizard-macro-expand program-with-binding)
+
+(wizard-macro-expand program-with-two-bindings)
