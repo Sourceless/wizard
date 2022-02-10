@@ -1,24 +1,5 @@
 (ns wizard
-  (:require [clojure.walk :refer [prewalk postwalk]]))
-
-(def my-program
-  '(((fn x x) (fn _ 0)) 1))
-
-(def my-boring-program
-  '(1))
-
-(def program-with-binding
-  '(
-    (def x 1)
-    x
-    ))
-
-(def program-with-two-bindings
-  '(
-    (def x 1)
-    (def y 2)
-    x
-    ))
+  (:require [clojure.walk :refer [postwalk]]))
 
 (defn fmap [f data]
   (if (seq? data)
@@ -36,23 +17,13 @@
   (let [new-name (gensym (str arg-name "__"))]
     (list 'fn new-name (fmap (replace-if-matches arg-name new-name) body))))
 
-(defn wizard-macro-binding [binding body]
-  (println "Expanding" binding)
-  (let [name (second binding)
-        value (last binding)]
-    (list (list 'fn name body) value)))
-
-(defn wizard-macro-expand-form [form]
-  (if (and (seq? form) (seq? (first form)) (= 'def (first (first form))))
-    (wizard-macro-binding (first form) (second form))
-    form))
-
-(defn wizard-read-form [form]
+(defn wizard-read-form [form context]
   (if (seq? form)
     (cond
-      (= 'fn (first form)) (wizard-fn-alpha-conversion (second form) (last form))
-      :else form)
-    form))
+      (= 'fn (first form)) [(wizard-fn-alpha-conversion (second form) (last form)) context]
+      (= 'def (first form)) [form (assoc-in context [:definitions (keyword (second form))] (last form))]
+      :else [form context])
+    [form context]))
 
 (defn wizard-fn-beta-reduce [f arg]
   (if (and (seq? f) (= 'fn (first f)))
@@ -66,23 +37,31 @@
     (seq? form) (wizard-fn-beta-reduce (first form) (rest form))
     :else form))
 
-(defn wizard-read [program]
-  (postwalk wizard-read-form program))
+; https://clojuredocs.org/clojure.core/merge
+(defn deep-merge [a & maps]
+  (if (map? a)
+    (apply merge-with deep-merge a maps)
+    (apply merge-with deep-merge maps)))
 
-(defn value? [program]
-  (number? program))
+(defn wizard-read
+  ([program]
+   (wizard-read program {}))
+  ([program context]
+   (cond
+     (seq? program) (let [read-forms (map #(wizard-read % context) program)
+                          programs (map first read-forms)
+                          contexts (map second read-forms)
+                          new-context (apply deep-merge contexts)]
+                      (wizard-read-form programs new-context))
+     :else (wizard-read-form program context))))
 
 (defn reducible? [program]
-  (seq? program))
+  (and
+   (seq? program)
+   (not (string? program))))
 
 (defn terminal? [program]
   (not (reducible? program)))
-
-(defn wizard-macro-expand [program]
-  (println program)
-  (if (reducible? program)
-    (map wizard-macro-expand (wizard-macro-expand-form program))
-    program))
 
 (defn function? [program]
   (and (reducible? program) (= 'fn (first program))))
@@ -90,42 +69,68 @@
 (defn indent [n]
   (apply str (repeat n "  ")))
 
-(defn normal-order-eval [program nesting]
+(defn lookup [terminal context]
+  (let [definitions (:definitions context)
+        name (keyword terminal)]
+    (if (contains? definitions name)
+      (get definitions name)
+      (throw (Exception. (str "Unknown binding " terminal))))))
+
+(defn literal? [program]
+  (or
+   (number? program)
+   (string? program)))
+
+(defn normal-order-eval [program context nesting]
   (println (indent nesting) "EVAL:" program)
   (cond
-    (terminal? program) program ; if there is nothing to do, do nothing
+    (literal? program) program ; if it's just a value, return the value
+    (terminal? program) (normal-order-eval (lookup program context) context nesting) ; replace the value from lookup and re-evaluate
     (function? program) program ; functions are values and there is nothing to do here
     (reducible? program) (let    ; we have something we can reduce, so let's reduce it
                              [left (first program)
                               right (second program)]
                            (cond
-                             (value? left) left
-                             (terminal? left) program ; nothing we can do, since functions don't have names yet
-                             (function? left) (normal-order-eval (wizard-fn-beta-reduce left right) (inc nesting)) ; apply function
-                             (reducible? left) (normal-order-eval (list (normal-order-eval left (inc nesting)) right) nesting) ; the left side can be reduced
+                             (terminal? left) (normal-order-eval (list (lookup left context) right) context (inc nesting))
+                             (function? left) (normal-order-eval (wizard-fn-beta-reduce left right) context (inc nesting)) ; apply function
+                             (reducible? left) (normal-order-eval (list (normal-order-eval left context (inc nesting)) right) context nesting) ; the left side can be reduced
+
+                             ; TODO: these should error
+                             (literal? left) program ; nothing we can do, since functions don't have names yet
                              :else program))
     :else program
     )
   )
 
-(defn wizard-eval [program]
-  (println)
-  (println "START EVAL")
-  (normal-order-eval program 0))
+(defn wizard-eval [[program context]]
+  (normal-order-eval program context 0))
 
-(wizard-eval (wizard-read my-program))
+(defn wizard-load-main [[program context]]
+  (if (contains? (:definitions context) :main)
+    [(get-in context [:definitions :main]) context]
+    (throw (Exception. "Expected to find definition for main, but no definition of main found."))))
 
 (defn wizard-interpret [program]
   (-> program
-      wizard-macro-expand
       wizard-read
+      wizard-load-main
       wizard-eval))
 
+(def my-program
+  '(def main (((fn x x) (fn _ 0)) 1)))
 (assert (= (wizard-interpret my-program) 0))
+
+(def my-boring-program
+  '(def main 1))
 (assert (= (wizard-interpret my-boring-program) 1))
-(assert (= (wizard-macro-expand program-with-binding) '((fn x x) 1)))
-(assert (= (wizard-interpret program-with-binding) 1))
 
-(wizard-macro-expand program-with-binding)
+(def my-function-call
+  '((def identity (fn x x))
+    (def main (identity 1))))
+(assert (= (wizard-interpret my-function-call) 1))
 
-(wizard-macro-expand program-with-two-bindings)
+
+(def my-function-call-string
+  '((def identity (fn x x))
+    (def main (identity "hello"))))
+(assert (= (wizard-interpret my-function-call-string) "hello"))
