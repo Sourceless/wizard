@@ -82,7 +82,7 @@
    (string? program)))
 
 (defn normal-order-eval [program context nesting]
-   (println (indent nesting) "EVAL:" program)
+   ;; (println (indent nesting) "EVAL:" program)
 -  (cond
     (literal? program) program ; if it's just a value, return the value
     (terminal? program) (normal-order-eval (lookup program context) context nesting) ; replace the value from lookup and re-evaluate
@@ -110,8 +110,20 @@
     [(get-in context [:definitions :main]) context]
     (throw (Exception. "Expected to find definition for main, but no definition of main found."))))
 
+(defn wizard-alpha-macros [program]
+  program)
+
+(defn wizard-read-macros [program]
+  program)
+
+(defn wizard-macro-expand [program]
+  program)
+
 (defn wizard-interpret [program]
   (-> program
+      wizard-alpha-macros
+      wizard-read-macros
+      wizard-macro-expand
       wizard-alpha
       wizard-read
       wizard-load-main
