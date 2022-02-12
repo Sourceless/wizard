@@ -116,6 +116,14 @@
       wizard-load-main
       wizard-eval))
 
+(def prelude
+  '((def identity (lambda x x))
+    (def true (lambda x (lambda y x)))
+    (def false (lambda x (lambda y y)))
+    (def cond (lambda x (lambda y (lambda c ((c x) y)))))
+    (def and (lambda x (lambda y (((cond y) false) x))))
+    (def or (lambda x (lambda y (((cond y) true) x))))))
+
 (def my-program
   '(def main (((lambda x x) (lambda _ 0)) 1)))
 (assert (= (wizard-interpret my-program) 0))
@@ -133,3 +141,13 @@
   '((def identity (lambda x x))
     (def main (identity "hello"))))
 (assert (= (wizard-interpret my-function-call-string) "hello"))
+
+(def logic-true
+  (concat prelude
+          '((def main ((true 1) 0)))))
+(wizard-interpret logic-true)
+
+(def logic-cond
+  (concat prelude
+          '((def main cond))))
+(wizard-interpret logic-cond)
