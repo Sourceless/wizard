@@ -1,27 +1,26 @@
 (ns wizard
   (:require [clojure.walk :refer [postwalk]]))
 
-; TODO fix alpha conversion
-(defn treemap [f data]
-  (if (seq? data)
-    (map #(treemap f %) (map f data))
-    (f data)))
-
 (defn replace-if-matches [old-name new-name]
   (fn [form]
     (if (= form old-name)
       new-name
       form)))
 
-(defn wizard-fn-alpha-conversion [arg-name body]
-  ; Replace arg in body with a unique value
-  (let [new-name (gensym (str arg-name "__"))]
-    (list 'lambda new-name (treemap (replace-if-matches arg-name new-name) body))))
+(defn lambda? [form]
+  (and (seq? form) (= 'lambda (first form)) (= (count form) 3)))
+
+(defn wizard-alpha [program]
+  (cond (lambda? program) (let [arg-name (second program)
+                             body (last program)
+                             new-arg-name (gensym (str arg-name "__"))]
+                         (list 'lambda new-arg-name (postwalk (replace-if-matches arg-name new-arg-name) (wizard-alpha body))))
+        (seq? program) (map wizard-alpha program)
+        :else program))
 
 (defn wizard-read-form [form context]
   (if (seq? form)
     (cond
-      (= 'lambda (first form)) [(wizard-fn-alpha-conversion (second form) (last form)) context]
       (= 'def (first form)) [form (assoc-in context [:definitions (keyword (second form))] (last form))]
       :else [form context])
     [form context]))
@@ -83,8 +82,8 @@
    (string? program)))
 
 (defn normal-order-eval [program context nesting]
-  (println (indent nesting) "EVAL:" program)
-  (cond
+   (println (indent nesting) "EVAL:" program)
+-  (cond
     (literal? program) program ; if it's just a value, return the value
     (terminal? program) (normal-order-eval (lookup program context) context nesting) ; replace the value from lookup and re-evaluate
     (function? program) program ; functions are values and there is nothing to do here
@@ -106,24 +105,25 @@
 (defn wizard-eval [[program context]]
   (normal-order-eval program context 0))
 
-(defn wizard-load-main [[program context]]
+(defn wizard-load-main [[_ context]]
   (if (contains? (:definitions context) :main)
     [(get-in context [:definitions :main]) context]
     (throw (Exception. "Expected to find definition for main, but no definition of main found."))))
 
 (defn wizard-interpret [program]
   (-> program
+      wizard-alpha
       wizard-read
       wizard-load-main
       wizard-eval))
 
 (def prelude
-  '((def identity (lambda x x))
-    (def true (lambda x (lambda y x)))
-    (def false (lambda x (lambda y y)))
-    (def cond (lambda x (lambda y (lambda c ((c x) y)))))
-    (def and (lambda x (lambda y (((cond y) false) x))))
-    (def or (lambda x (lambda y (((cond y) true) x))))))
+  '((def lc-id (lambda x x))
+    (def lc-t (lambda x (lambda y x)))
+    (def lc-f (lambda x (lambda y y)))
+    (def lc-cond (lambda x (lambda y (lambda c ((c x) y)))))
+    (def lc-and (lambda x (lambda y (((cond y) false) x))))
+    (def lc-or (lambda x (lambda y (((cond y) true) x))))))
 
 (def my-program
   '(def main (((lambda x x) (lambda _ 0)) 1)))
@@ -145,10 +145,5 @@
 
 (def logic-true
   (concat prelude
-          '((def main ((true 1) 0)))))
+          '((def main ((lc-t 1) 0)))))
 (wizard-interpret logic-true)
-
-(def logic-cond
-  (concat prelude
-          '((def main true))))
-(wizard-interpret logic-cond)
