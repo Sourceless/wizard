@@ -15,7 +15,11 @@ Roughly in priority order:
 * Type constructors
 * Polymorphism
 * Dependent types
+* A decent set of primitives, including maps
+* Interfaces (aka typeclasses)
+* Record types
 * Linear/Quantitative types
+* Modest prelude
 * Compiler (to Rust or Zig)
 * Self-hosting
 * Modest stdlib
