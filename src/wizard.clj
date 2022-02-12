@@ -1,9 +1,10 @@
 (ns wizard
   (:require [clojure.walk :refer [postwalk]]))
 
-(defn fmap [f data]
+; TODO fix alpha conversion
+(defn treemap [f data]
   (if (seq? data)
-    (map f data)
+    (map #(treemap f %) (map f data))
     (f data)))
 
 (defn replace-if-matches [old-name new-name]
@@ -15,7 +16,7 @@
 (defn wizard-fn-alpha-conversion [arg-name body]
   ; Replace arg in body with a unique value
   (let [new-name (gensym (str arg-name "__"))]
-    (list 'lambda new-name (fmap (replace-if-matches arg-name new-name) body))))
+    (list 'lambda new-name (treemap (replace-if-matches arg-name new-name) body))))
 
 (defn wizard-read-form [form context]
   (if (seq? form)
@@ -149,5 +150,5 @@
 
 (def logic-cond
   (concat prelude
-          '((def main cond))))
+          '((def main true))))
 (wizard-interpret logic-cond)
