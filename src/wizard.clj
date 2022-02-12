@@ -15,18 +15,18 @@
 (defn wizard-fn-alpha-conversion [arg-name body]
   ; Replace arg in body with a unique value
   (let [new-name (gensym (str arg-name "__"))]
-    (list 'fn new-name (fmap (replace-if-matches arg-name new-name) body))))
+    (list 'lambda new-name (fmap (replace-if-matches arg-name new-name) body))))
 
 (defn wizard-read-form [form context]
   (if (seq? form)
     (cond
-      (= 'fn (first form)) [(wizard-fn-alpha-conversion (second form) (last form)) context]
+      (= 'lambda (first form)) [(wizard-fn-alpha-conversion (second form) (last form)) context]
       (= 'def (first form)) [form (assoc-in context [:definitions (keyword (second form))] (last form))]
       :else [form context])
     [form context]))
 
 (defn wizard-fn-beta-reduce [f arg]
-  (if (and (seq? f) (= 'fn (first f)))
+  (if (and (seq? f) (= 'lambda (first f)))
     (let [arg-name (second f)
           body (last f)]
       (postwalk (replace-if-matches arg-name arg) body))
@@ -64,7 +64,7 @@
   (not (reducible? program)))
 
 (defn function? [program]
-  (and (reducible? program) (= 'fn (first program))))
+  (and (reducible? program) (= 'lambda (first program))))
 
 (defn indent [n]
   (apply str (repeat n "  ")))
@@ -117,7 +117,7 @@
       wizard-eval))
 
 (def my-program
-  '(def main (((fn x x) (fn _ 0)) 1)))
+  '(def main (((lambda x x) (lambda _ 0)) 1)))
 (assert (= (wizard-interpret my-program) 0))
 
 (def my-boring-program
@@ -125,12 +125,11 @@
 (assert (= (wizard-interpret my-boring-program) 1))
 
 (def my-function-call
-  '((def identity (fn x x))
+  '((def identity (lambda x x))
     (def main (identity 1))))
 (assert (= (wizard-interpret my-function-call) 1))
 
-
 (def my-function-call-string
-  '((def identity (fn x x))
+  '((def identity (lambda x x))
     (def main (identity "hello"))))
 (assert (= (wizard-interpret my-function-call-string) "hello"))
