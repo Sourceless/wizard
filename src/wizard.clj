@@ -10,6 +10,9 @@
 (defn lambda? [form]
   (and (seq? form) (= 'lambda (first form)) (= (count form) 3)))
 
+(defn macro? [form]
+  (and (seq? form) (= 'macro (first form)) (= (count form) 3)))
+
 (defn wizard-alpha [program]
   (cond (lambda? program) (let [arg-name (second program)
                              body (last program)
@@ -18,10 +21,25 @@
         (seq? program) (map wizard-alpha program)
         :else program))
 
+(defn wizard-alpha-macros [program]
+  (cond (macro? program) (let [arg-name (second program)
+                             body (last program)
+                             new-arg-name (gensym (str "macro__" arg-name "__"))]
+                         (list 'lambda new-arg-name (postwalk (replace-if-matches arg-name new-arg-name) (wizard-alpha-macros body))))
+        (seq? program) (map wizard-alpha-macros program)
+        :else program))
+
 (defn wizard-read-form [form context]
   (if (seq? form)
     (cond
       (= 'def (first form)) [form (assoc-in context [:definitions (keyword (second form))] (last form))]
+      :else [form context])
+    [form context]))
+
+(defn wizard-read-macros-form [form context]
+  (if (seq? form)
+    (cond
+      (= 'defmacro (first form)) [form (assoc-in context [:macros (keyword (second form))] (last form))]
       :else [form context])
     [form context]))
 
@@ -55,6 +73,18 @@
                       (wizard-read-form programs new-context))
      :else (wizard-read-form program context))))
 
+(defn wizard-read-macros
+  ([program]
+   (wizard-read-macros program {}))
+  ([program context]
+   (cond
+     (seq? program) (let [read-forms (map #(wizard-read-macros % context) program)
+                          programs (map first read-forms)
+                          contexts (map second read-forms)
+                          new-context (apply deep-merge contexts)]
+                      (wizard-read-macros-form programs new-context))
+     :else (wizard-read-macros-form program context))))
+
 (defn reducible? [program]
   (and
    (seq? program)
@@ -83,7 +113,7 @@
 
 (defn normal-order-eval [program context nesting]
    ;; (println (indent nesting) "EVAL:" program)
--  (cond
+  (cond
     (literal? program) program ; if it's just a value, return the value
     (terminal? program) (normal-order-eval (lookup program context) context nesting) ; replace the value from lookup and re-evaluate
     (function? program) program ; functions are values and there is nothing to do here
@@ -110,13 +140,7 @@
     [(get-in context [:definitions :main]) context]
     (throw (Exception. "Expected to find definition for main, but no definition of main found."))))
 
-(defn wizard-alpha-macros [program]
-  program)
-
-(defn wizard-read-macros [program]
-  program)
-
-(defn wizard-macro-expand [program]
+(defn wizard-macro-expand [[program context]]
   program)
 
 (defn wizard-interpret [program]
