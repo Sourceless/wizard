@@ -7,9 +7,12 @@ for developing something more ergonomic.
 * Core untyped lambda calculus
 * Definitions
 
+# In progress features
+* Macros (alpha conversion and reading done, still need to do expansion)
+
 # Planned features
 Roughly in priority order:
-* Macros
+* Currying/Uncurrying + nice funtion def macros
 * REPL
 * Core simply typed lambda calculus
 * Type constructors
@@ -21,7 +24,7 @@ Roughly in priority order:
 * Linear/Quantitative types
 * Modest prelude
 * Compiler (to Rust or Zig)
-* Self-hosting
+* Self-hosting(!)
 * Modest stdlib
 * Package manager
 * Autoformatter
