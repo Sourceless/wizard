@@ -179,30 +179,43 @@
     (def lc-and (lambda x (lambda y (((cond y) false) x))))
     (def lc-or (lambda x (lambda y (((cond y) true) x))))))
 
+; shows that function execution works as expected
 (def my-program
   '(def main (((lambda x x) (lambda _ 0)) 1)))
 (assert (= (wizard-interpret my-program) 0))
 
+; shows that main is executed
 (def my-boring-program
   '(def main 1))
 (assert (= (wizard-interpret my-boring-program) 1))
 
+; shows that a defined function can be called
 (def my-function-call
   '((def identity (lambda x x))
     (def main (identity 1))))
 (assert (= (wizard-interpret my-function-call) 1))
 
+; shows that strings can be returned
 (def my-function-call-string
   '((def identity (lambda x x))
     (def main (identity "hello"))))
 (assert (= (wizard-interpret my-function-call-string) "hello"))
 
+; lambda calculus true
 (def logic-true
   (concat prelude
           '((def main ((lc-t 1) 0)))))
 (assert (= (wizard-interpret logic-true) 1))
 
+; Basic test showing that macros do indeed expand
 (def macro-test
   '((defmacro x 1)
     (def main x)))
 (assert (= (wizard-interpret macro-test) 1))
+
+; This shows that the macro does not pollute the namespaces of functions
+(def macro-hygeine-test
+  '((defmacro a 1)
+    (def identity (lambda a a))
+    (def main (identity 2))))
+(wizard-interpret macro-hygeine-test)
