@@ -11,7 +11,7 @@
   (and (seq? form) (= 'lambda (first form)) (= (count form) 3)))
 
 (defn macro? [form]
-  (and (seq? form) (= 'macro (first form)) (= (count form) 3)))
+  (and (seq? form) (= 'defmacro (first form)) (= (count form) 3)))
 
 (defn wizard-alpha [program]
   (cond (lambda? program) (let [arg-name (second program)
@@ -21,13 +21,13 @@
         (seq? program) (map wizard-alpha program)
         :else program))
 
-(defn wizard-alpha-macros [program]
-  (cond (macro? program) (let [arg-name (second program)
-                             body (last program)
-                             new-arg-name (gensym (str "macro__" arg-name "__"))]
-                         (list 'lambda new-arg-name (postwalk (replace-if-matches arg-name new-arg-name) (wizard-alpha-macros body))))
-        (seq? program) (map wizard-alpha-macros program)
-        :else program))
+;; (defn wizard-alpha-macros [program]
+;;   (cond (macro? program) (let [arg-name (second program)
+;;                              body (last program)
+;;                              new-arg-name (gensym (str "macro__" arg-name "__"))]
+;;                          (list 'lambda new-arg-name (postwalk (replace-if-matches arg-name new-arg-name) (wizard-alpha-macros body))))
+;;         (seq? program) (map wizard-alpha-macros program)
+;;         :else program))
 
 (defn wizard-read-form [form context]
   (if (seq? form)
@@ -140,18 +140,36 @@
     [(get-in context [:definitions :main]) context]
     (throw (Exception. "Expected to find definition for main, but no definition of main found."))))
 
+(defn is-macro [name context]
+  (contains? (:macros context) (keyword name)))
+
+(defn replace-macro [name context]
+  (get-in context [:macros (keyword name)]))
+
 (defn wizard-macro-expand [[program context]]
-  program)
+  (println [program context])
+  (cond
+    (terminal? program) (if (is-macro program context)
+                          (wizard-macro-expand [(replace-macro program context) context])
+                          program)
+    (reducible? program) (map #(wizard-macro-expand [% context]) program)
+    :else program))
+
+(defn is-macro-defn? [program]
+  (and (reducible? program) (= 'defmacro (first program))))
+
+(defn wizard-delete-macro-defns [[program context]]
+  [(remove is-macro-defn? program) context])
 
 (defn wizard-interpret [program]
   (-> program
-      wizard-alpha-macros
-      wizard-read-macros
-      wizard-macro-expand
-      wizard-alpha
-      wizard-read
-      wizard-load-main
-      wizard-eval))
+      wizard-alpha ; replace identifiers inside function definitions to prevent accidental capture
+      wizard-read-macros ; find out what macro declarations we have
+      wizard-delete-macro-defns ; get rid of macro defns, they are no longer needed!
+      wizard-macro-expand ; replace macros with their definitions
+      wizard-read ; find out what definitions there are
+      wizard-load-main ; load the main definition as the entrypoint
+      wizard-eval)) ; eval in (lazy) normal-order
 
 (def prelude
   '((def lc-id (lambda x x))
@@ -182,4 +200,9 @@
 (def logic-true
   (concat prelude
           '((def main ((lc-t 1) 0)))))
-(wizard-interpret logic-true)
+(assert (= (wizard-interpret logic-true) 1))
+
+(def macro-test
+  '((defmacro x 1)
+    (def main x)))
+(assert (= (wizard-interpret macro-test) 1))
