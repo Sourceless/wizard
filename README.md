@@ -6,19 +6,21 @@ for developing something more ergonomic.
 * Interpreter (currently implemented in Clojure)
 * Core untyped lambda calculus
 * Definitions
+* Macros
 
 # In progress features
-* Macros (alpha conversion and reading done, still need to do expansion)
+* Lists
 
 # Planned features
 Roughly in priority order:
+* Maps (dictionaries)
+* Some built-ins
 * Currying/Uncurrying + nice funtion def macros
 * REPL
 * Core simply typed lambda calculus
 * Type constructors
 * Polymorphism
 * Dependent types
-* A decent set of primitives, including maps
 * Interfaces (aka typeclasses)
 * Record types
 * Linear/Quantitative types
