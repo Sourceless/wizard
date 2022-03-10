@@ -9,13 +9,15 @@ for developing something more ergonomic.
 * Macros
 
 # In progress features
+* Quote
 * Lists
 
 # Planned features
 Roughly in priority order:
 * Maps (dictionaries)
+* Quasiquote
 * Some built-ins
-* Currying/Uncurrying + nice funtion def macros
+* Currying/Uncurrying + nice function def macros
 * REPL
 * Core simply typed lambda calculus
 * Type constructors
