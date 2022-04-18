@@ -43,6 +43,13 @@
       :else [form context])
     [form context]))
 
+(defn wizard-read-types-form [form context]
+  (if (seq? form)
+    (cond
+      (= 'sig (first form)) [form (assoc-in context [:signatures (keyword (second form))] (last form))]
+      :else [form context])
+    [form context]))
+
 (defn wizard-fn-beta-reduce [f arg]
   (if (and (seq? f) (= 'lambda (first f)))
     (let [arg-name (second f)
@@ -62,8 +69,8 @@
     (apply merge-with deep-merge maps)))
 
 (defn wizard-read
-  ([program]
-   (wizard-read program {}))
+  ([[program context]]
+   (wizard-read program context))
   ([program context]
    (cond
      (seq? program) (let [read-forms (map #(wizard-read % context) program)
@@ -84,6 +91,18 @@
                           new-context (apply deep-merge contexts)]
                       (wizard-read-macros-form programs new-context))
      :else (wizard-read-macros-form program context))))
+
+(defn wizard-read-types
+  ([program]
+   (wizard-read-types program {}))
+  ([program context]
+   (cond
+     (seq? program) (let [read-forms (map #(wizard-read-types % context) program)
+                          programs (map first read-forms)
+                          contexts (map second read-forms)
+                          new-context (apply deep-merge contexts)]
+                      (wizard-read-types-form programs new-context))
+     :else (wizard-read-types-form program context))))
 
 (defn reducible? [program]
   (and
@@ -170,6 +189,7 @@
       wizard-read-macros ; find out what macro declarations we have
       wizard-delete-macro-defns ; get rid of macro defns, they are no longer needed!
       wizard-macro-expand ; replace macros with their definitions
+      wizard-read-types ; read type signatures
       wizard-read ; find out what definitions there are
       wizard-load-main ; load the main definition as the entrypoint
       wizard-eval)) ; eval in (lazy) normal-order
