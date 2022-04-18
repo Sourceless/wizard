@@ -183,6 +183,45 @@
 (defn wizard-delete-macro-defns [[program context]]
   [(remove is-macro-defn? program) context])
 
+(defn load-context [[program context1] context2]
+    [program (deep-merge context1 context2)])
+
+(defn is-type-signature? [program]
+  (and (reducible? program) (= 'sig (first program))))
+
+(defn wizard-delete-type-signatures [[program context]]
+  [(remove is-type-signature? program) context])
+
+(defn missing-type-signature? [name context]
+  (not (contains? (:signatures context) name)))
+
+(defn quoted? [value]
+  (and (seq? value)
+       (= 'quote (first value))))
+
+; not super happy with this -- really need to find a better way to deal with
+; 'quote'. For now we will just ignore that it exists until I implement
+; a nice AST type later.
+(defn check-signature-matches-value [signature value]
+  (cond
+    (keyword? value) (= signature 'Atom)
+    :else false))
+
+(defn signature-doesnt-match-value? [signature value]
+  (not (check-signature-matches-value signature value)))
+
+(defn wizard-check-definition [context]
+  (fn [[name value]]
+    (cond
+      (missing-type-signature? name context) (throw (Exception. (str name " does not have a known type")))
+      (signature-doesnt-match-value? (get-in context [:signatures name]) value) (throw (Exception. (str "Value of " name " does not match expected signature")))
+      :else true)))
+
+(defn wizard-check-types [[program context]]
+  ;; Iterate over each defintion and check that it typechecks.
+  (let [check-definitions (map (wizard-check-definition context) (:definitions context))]
+    (seq check-definitions)
+    [program context]))
 (defn wizard-interpret [program]
   (-> program
       wizard-alpha ; replace identifiers inside function definitions to prevent accidental capture
@@ -199,8 +238,8 @@
     (def lc-t (lambda x (lambda y x)))
     (def lc-f (lambda x (lambda y y)))
     (def lc-cond (lambda x (lambda y (lambda c ((c x) y)))))
-    (def lc-and (lambda x (lambda y (((cond y) false) x))))
-    (def lc-or (lambda x (lambda y (((cond y) true) x))))))
+    (def lc-and (lambda x (lambda y (((lc-cond y) false) x))))
+    (def lc-or (lambda x (lambda y (((lc-cond y) true) x))))))
 
 ; shows that function execution works as expected
 (def my-program
@@ -249,9 +288,22 @@
 ;;       (list 1 2 3))))
 ;; (wizard-interpret list-test)
 
+(def prelude-typed
+  {:signatures {}})
 
 ; Basic simply-typed function
 (def typed-fn
   '((sig main Atom)
-    (def main 'hello)))
-(wizard-interpret typed-fn)
+    (def main :hello)))
+
+; (wizard-interpret typed-fn)
+(-> typed-fn
+    wizard-alpha
+    wizard-read-macros
+    wizard-delete-macro-defns
+    wizard-macro-expand
+    wizard-read-types
+    wizard-delete-type-signatures
+    wizard-read
+    (load-context prelude-typed)
+    wizard-check-types)
