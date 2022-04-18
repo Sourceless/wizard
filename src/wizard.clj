@@ -111,6 +111,9 @@
    (number? program)
    (string? program)))
 
+(defn quote? [program]
+  (= program 'quote))
+
 (defn normal-order-eval [program context nesting]
    ;; (println (indent nesting) "EVAL:" program)
   (cond
@@ -121,6 +124,7 @@
                              [left (first program)
                               right (second program)]
                            (cond
+                             (quote? left) right
                              (terminal? left) (normal-order-eval (list (lookup left context) right) context (inc nesting))
                              (function? left) (normal-order-eval (wizard-fn-beta-reduce left right) context (inc nesting)) ; apply function
                              (reducible? left) (normal-order-eval (list (normal-order-eval left context (inc nesting)) right) context nesting) ; the left side can be reduced
@@ -147,7 +151,6 @@
   (get-in context [:macros (keyword name)]))
 
 (defn wizard-macro-expand [[program context]]
-  (println [program context])
   (cond
     (terminal? program) (if (is-macro program context)
                           (wizard-macro-expand [(replace-macro program context) context])
@@ -218,4 +221,17 @@
   '((defmacro a 1)
     (def identity (lambda a a))
     (def main (identity 2))))
-(wizard-interpret macro-hygeine-test)
+(assert (= (wizard-interpret macro-hygeine-test) 2))
+
+; Built-in list type
+;; (def list-test
+;;   '((def main
+;;       (list 1 2 3))))
+;; (wizard-interpret list-test)
+
+
+; Basic simply-typed function
+(def typed-fn
+  '((sig main Atom)
+    (def main 'hello)))
+(wizard-interpret typed-fn)
